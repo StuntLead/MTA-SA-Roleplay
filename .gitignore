@@ -36,3 +36,7 @@ _t*.txt
 !*.env.example
 *.secret
 *.private
+
+# Independent sub-projects (separate repositories)
+/admin-panel/
+
