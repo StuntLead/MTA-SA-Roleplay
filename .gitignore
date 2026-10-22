@@ -1,0 +1,38 @@
+# Operating System files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.user
+
+# MTA Server runtime logs
+logs/logs/*.log
+!logs/logs/.gitkeep
+*.log
+
+# Temporary logs, test dumps and scratch files
+_t*.txt
+*.tmp
+*.bak
+*.old
+*~
+*.swp
+*.dmp
+*.crash
+
+# Numbered backup files (e.g. .ttf.1, .ttf.2)
+*.[0-9]
+*.ttf.[0-9]*
+
+# Environment & credentials (if added locally)
+.env
+.env.*
+!*.env.example
+*.secret
+*.private

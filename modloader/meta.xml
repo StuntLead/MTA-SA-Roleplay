@@ -1,0 +1,24 @@
+<meta>
+    <info type="script" description="Automatically load any mod you want!" author="Remi-X" version="1.0.3" name="ModLoader" />
+    <script src="loader_s.lua" type="server" />
+    <script src="deleter_s.lua" type="server" />
+    <script src="handling.lua" type="server" />
+    <script src="data.lua" type="server" />
+    <script src="replacer_c.lua" type="client" />
+    <file src="vehicles/stratum.txd"></file>
+    <file src="vehicles/stratum.dff"></file>
+    <file src="vehicles/copcarla.txd"></file>
+    <file src="vehicles/copcarla.dff"></file>
+    <file src="vehicles/banshee.txd"></file>
+    <file src="vehicles/banshee.dff"></file>
+    <file src="vehicles/elegant.txd"></file>
+    <file src="vehicles/elegant.dff"></file>
+    <file src="vehicles/enforcer.txd"></file>
+    <file src="vehicles/enforcer.dff"></file>
+    <file src="vehicles/phoenix.txd"></file>
+    <file src="vehicles/phoenix.dff"></file>
+    <file src="vehicles/turismo.txd"></file>
+    <file src="vehicles/turismo.dff"></file>
+    <file src="vehicles/comet.txd"></file>
+    <file src="vehicles/comet.dff"></file>
+</meta>

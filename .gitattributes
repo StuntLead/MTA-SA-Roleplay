@@ -1,0 +1,38 @@
+# Auto detect text files and normalize line endings to LF on commit
+* text=auto eol=lf
+
+# Source and configuration text files
+*.lua text eol=lf
+*.xml text eol=lf
+*.fx text eol=lf
+*.map text eol=lf
+*.sql text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.htm text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# GTA SA & MTA binary assets (prevent git line-ending conversion from corrupting files)
+*.dff binary
+*.txd binary
+*.col binary
+*.ifp binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.dds binary
+*.psd binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.ttf binary
+*.otf binary
+*.luac binary
+*.zip binary
+*.rar binary
+*.7z binary
+*.fxo binary
