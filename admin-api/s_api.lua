@@ -194,5 +194,20 @@ function getServerOverview()
 end
 
 addEventHandler("onResourceStart", resourceRoot, function()
+    -- Ensure internal admin account exists for HTTP API
+    local acc = getAccount("admin")
+    if not acc then
+        addAccount("admin", "admin")
+        outputDebugString("[ADMIN-API] Created internal 'admin' account for Web API.")
+    end
+
+    -- Add to Admin ACL group
+    local adminGroup = aclGetGroup("Admin")
+    if adminGroup then
+        aclGroupAddObject(adminGroup, "user.admin")
+        aclGroupAddObject(adminGroup, "resource.admin-api")
+    end
+
     outputDebugString("[ADMIN-API] Web Admin API Bridge loaded successfully.")
 end)
+
