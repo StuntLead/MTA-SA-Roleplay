@@ -1,0 +1,14 @@
+<meta>
+    <info author="StuntLead" name="admin-api" version="1.0.0" type="script" description="MTA Web Admin API Bridge" />
+    
+    <script src="s_api.lua" type="server" />
+
+    <!-- Exported HTTP Functions for MTA Web/Remote calls -->
+    <export function="getOnlinePlayers" http="true" />
+    <export function="getResourcesList" http="true" />
+    <export function="startServerResource" http="true" />
+    <export function="stopServerResource" http="true" />
+    <export function="restartServerResource" http="true" />
+    <export function="kickServerPlayer" http="true" />
+    <export function="getServerOverview" http="true" />
+</meta>
