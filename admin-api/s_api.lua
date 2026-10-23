@@ -21,16 +21,13 @@ function getOnlinePlayers()
         local x, y, z = getElementPosition(player)
         local zone = getZoneName(x, y, z) or "San Andreas"
         local money = 0
-        local bank = 0
-
-        if exports.global then
-            if exports.global.getMoney then
-                money = exports.global:getMoney(player) or 0
-            end
-            if exports.global.getBankMoney then
-                bank = exports.global:getBankMoney(player) or 0
-            end
+        if exports.global and exports.global.getMoney then
+            money = exports.global:getMoney(player) or 0
+        else
+            money = getPlayerMoney(player) or 0
         end
+
+        local bank = tonumber(getElementData(player, "bankmoney")) or 0
 
         table.insert(players, {
             id = getElementData(player, "playerid") or _,
