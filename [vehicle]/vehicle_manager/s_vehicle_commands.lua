@@ -1015,8 +1015,8 @@ function respawnAllCivVehicles(thePlayer, commandName)
 				end
 			end
 		end
-		outputChatBox(" =-=-=-=-=-=- All Civilian Vehicles Respawned =-=-=-=-=-=-=", getRootElement(), 255, 194, 14)
-		outputChatBox("Respawned " .. counter .. " civilian vehicles.", thePlayer)
+		outputChatBox(" =-=-=-=-=-=- All Job Vehicles Respawned =-=-=-=-=-=-=", getRootElement(), 255, 194, 14)
+		outputChatBox("Respawned " .. counter .. " Job vehicles.", thePlayer)
 	end
 end
 addCommandHandler("respawnciv", respawnAllCivVehicles, false, false)
