@@ -70,10 +70,26 @@ addEventHandler( 'factions:editFaction', resourceRoot, function( data, old_id )
 			end
 		-- if creating new faction.
 		else
-			local qh2 = dbQuery( exports.mysql:getConn('mta'), "INSERT INTO factions SET bankbalance='0', motd='Welcome to the faction.', note = '', name=?, type=?, max_interiors=?, max_vehicles=?, free_custom_ints=?, free_custom_skins=?, before_tax_value=?, before_wage_charge=? ", data.name, data.type, data.max_interiors, data.max_vehicles, data.free_custom_ints, data.free_custom_skins, data.before_tax_value, data.free_wage_amount )
+			-- Find lowest available faction ID (fills any gaps: e.g. ID 4 if 1, 2, 3, 5 exist)
+			local idQuery = dbQuery(exports.mysql:getConn('mta'), "SELECT id FROM factions ORDER BY id ASC")
+			local idResult = dbPoll(idQuery, 10000)
+			local newID = 1
+			if idResult then
+				for _, row in ipairs(idResult) do
+					local currentID = tonumber(row.id)
+					if currentID == newID then
+						newID = newID + 1
+					elseif currentID > newID then
+						break
+					end
+				end
+			end
+
+			local qh2 = dbQuery( exports.mysql:getConn('mta'), "INSERT INTO factions SET id=?, bankbalance='0', motd='Welcome to the faction.', note = '', name=?, type=?, max_interiors=?, max_vehicles=?, free_custom_ints=?, free_custom_skins=?, before_tax_value=?, before_wage_charge=? ", newID, data.name, data.type, data.max_interiors, data.max_vehicles, data.free_custom_ints, data.free_custom_skins, data.before_tax_value, data.free_wage_amount )
 			local res, nums, id = dbPoll( qh2, 10000 )
-			if id and tonumber(id) then
-				data.id = id
+			local finalID = (id and tonumber(id) and tonumber(id) > 0) and tonumber(id) or newID
+			if nums and nums > 0 then
+				data.id = finalID
 				data.bankbalance = 0
 				data.motd = ''
 				data.note = ''
@@ -131,11 +147,11 @@ addEventHandler( 'factions:editFaction', resourceRoot, function( data, old_id )
 				exports.anticheat:setEld(theTeam, "rank_order", rank_order, 'all')
 				exports.anticheat:setEld(theTeam, "ranks", factionRanks, 'all')
 				exports.anticheat:setEld(theTeam, "wages", factionWages, 'all') 
-				dutyAllow[ id ] = { }
-				dutyAllow[ id ] = { id, name, { --[[Duty information]] } }
+				dutyAllow[ finalID ] = { }
+				dutyAllow[ finalID ] = { finalID, data.name, { --[[Duty information]] } }
 				setElementData( resourceRoot, "dutyAllowTable", dutyAllow)
-				locations[ id ] = { }
-				custom[ id ] = { }
+				locations[ finalID ] = { }
+				custom[ finalID ] = { }
 				exports.logs:dbLog( client, 4, theTeam, "MAKE FACTION")
 				exports.global:sendMessageToAdmins( "[FACTION] " .. exports.global:getPlayerFullIdentity( client ).." has created faction '" .. data.name .. "'." )
 				triggerClientEvent("faction-system.cacheRanks", root, FactionRanks)

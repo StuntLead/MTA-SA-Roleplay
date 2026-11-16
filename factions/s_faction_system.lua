@@ -18,9 +18,13 @@ function loadOneFaction(row)
 		destroyElement(theTeam)
 	end
 	local name = row.name
+	local existingTeam = getTeamFromName(tostring(name))
+	if existingTeam then
+		destroyElement(existingTeam)
+	end
 	local money = tonumber(row.bankbalance)
 	local factionType = tonumber(row.type)
-	local rankQuery = dbQuery(allocateFactionRank, mysql:getConn("mta"), "SELECT *  FROM `faction_ranks` WHERE `faction_id` = ?", id)
+	local rankQuery = dbQuery(allocateFactionRank, { id }, mysql:getConn("mta"), "SELECT *  FROM `faction_ranks` WHERE `faction_id` = ?", id)
 
 	theTeam = createTeam(tostring(name))
 	if theTeam then
@@ -134,6 +138,121 @@ function bindKeysOnJoin()
 end
 addEventHandler("onPlayerJoin", getRootElement(), bindKeysOnJoin)
 
+-- Builds the rank lookup tables used by the faction menu (rank ID -> rank name and
+-- rank name -> rank ID) and repairs a broken rank_order. A rank_order that contains
+-- rank IDs which do not exist for the faction (e.g. after a faction ID was changed
+-- manually in the database, or after a rank was removed outside of the script) used
+-- to crash the menu with "table index is nil".
+function buildFactionRankTables(theTeam, factionID, rankOrder, factionRanks)
+	factionID = tonumber(factionID)
+	factionRanks = type(factionRanks) == "table" and factionRanks or {}
+
+	local originalOrder = type(rankOrder) == "table" and table.concat(rankOrder, ",") or tostring(rankOrder or "")
+
+	-- Numeric rank IDs listed in rank_order (split drops empty/invalid tokens).
+	local listedRanks = {}
+	for _, rankID in ipairs(split(originalOrder, ",")) do
+		rankID = tonumber(rankID)
+		if rankID then
+			table.insert(listedRanks, rankID)
+		end
+	end
+
+	local factionRanksTbl = {}
+	local factionRankID = {}
+	local orderedRanks = {}
+
+	local function addRank(rankID, rankName)
+		if not rankID or not rankName or factionRanksTbl[rankID] then
+			return
+		end
+		factionRanksTbl[rankID] = rankName
+		factionRankID[rankName] = rankID
+		table.insert(orderedRanks, rankID)
+	end
+
+	-- Resolve the name of a rank, falling back to the database cache when the team
+	-- element data is missing or out of date for this faction.
+	local function getRankNameForFaction(rankID)
+		local rankName = factionRanks[rankID]
+		if rankName then
+			return rankName
+		end
+		if type(FactionRanks) == "table" then
+			local cached = FactionRanks[rankID] or FactionRanks[tostring(rankID)]
+			if type(cached) == "table" and tonumber(cached.faction_id) == factionID then
+				return cached.name
+			end
+		end
+		return nil
+	end
+
+	for _, rankID in ipairs(listedRanks) do
+		addRank(rankID, getRankNameForFaction(rankID))
+	end
+
+	-- Append ranks that belong to this faction but are missing from its rank_order.
+	for _, rankID in ipairs(getFactionRanks(factionID, false) or {}) do
+		rankID = tonumber(rankID)
+		if rankID then
+			addRank(rankID, getRankNameForFaction(rankID))
+		end
+	end
+
+	-- Auto-healing fallback: If this faction has NO valid ranks at all (empty/corrupted), create default ranks
+	if #orderedRanks == 0 and factionID then
+		local leaderPerms = ""
+		if type(mem_permissions) == "table" then
+			local perms = {}
+			for i, v in ipairs(mem_permissions) do
+				table.insert(perms, i)
+			end
+			leaderPerms = table.concat(perms, ",")
+		end
+
+		local qh1 = dbQuery(mysql:getConn("mta"), "INSERT INTO faction_ranks SET faction_id=?, name='Leader Rank', permissions=?, isDefault='0', isLeader='1', wage='0'", factionID, leaderPerms)
+		local _, _, rid1 = dbPoll(qh1, 10000)
+		local r1 = tonumber(rid1)
+
+		local qh2 = dbQuery(mysql:getConn("mta"), "INSERT INTO faction_ranks SET faction_id=?, name='Default Rank', permissions='', isDefault='1', isLeader='0', wage='0'", factionID)
+		local _, _, rid2 = dbPoll(qh2, 10000)
+		local r2 = tonumber(rid2)
+
+		if r1 then
+			addRank(r1, "Leader Rank")
+			if type(FactionRanks) == "table" then
+				FactionRanks[r1] = { name = "Leader Rank", permissions = leaderPerms, isDefault = 0, isLeader = 1, faction_id = factionID }
+			end
+			if type(RanksByFaction) == "table" then
+				RanksByFaction[factionID] = RanksByFaction[factionID] or {}
+				table.insert(RanksByFaction[factionID], r1)
+			end
+		end
+		if r2 then
+			addRank(r2, "Default Rank")
+			if type(FactionRanks) == "table" then
+				FactionRanks[r2] = { name = "Default Rank", permissions = "", isDefault = 1, isLeader = 0, faction_id = factionID }
+			end
+			if type(RanksByFaction) == "table" and RanksByFaction[factionID] then
+				table.insert(RanksByFaction[factionID], r2)
+			end
+		end
+	end
+
+	local newOrder = table.concat(orderedRanks, ",")
+	if #orderedRanks > 0 and newOrder ~= table.concat(listedRanks, ",") then
+		outputDebugString("[FACTIONS] Repaired rank_order of faction " .. tostring(factionID) .. ": '" .. originalOrder .. "' -> '" .. newOrder .. "'")
+		if isElement(theTeam) then
+			exports.anticheat:setEld(theTeam, "rank_order", newOrder, 'all')
+			exports.anticheat:setEld(theTeam, "ranks", factionRanksTbl, 'all')
+		end
+		dbExec(mysql:getConn("mta"), "UPDATE `factions` SET `rank_order` = ? WHERE `id` = ?", newOrder, factionID)
+	end
+
+	return factionRanksTbl, factionRankID, orderedRanks
+end
+
+
 function showFactionMenu(source)
 	showFactionMenuEx(source)
 end	
@@ -167,8 +286,8 @@ function showFactionMenuEx(source, factionID, fromShowF)
 					--[[local memberLocation = {}]]
 					local memberPerks = {}
 					local rankOrder = getElementData(theTeam, "rank_order") or ""
-					local factionRanks = getElementData(theTeam, "ranks")
-					local factionWages = getElementData(theTeam, "wages")
+					local factionRanks = getElementData(theTeam, "ranks") or {}
+					local factionWages = getElementData(theTeam, "wages") or {}
 					local motd = getElementData(theTeam, "motd")
 					local note = getElementData(theTeam, "note")
 					local fnote = getElementData(theTeam, "fnote")
@@ -182,20 +301,7 @@ function showFactionMenuEx(source, factionID, fromShowF)
 					local memberPhones = phone and {} or nil
 
 					if (motd == "") then motd = nil end
-					if (motd == "") then motd = nil end
-					if rankOrder == "" then
-						rankOrder = table.concat(getFactionRanks(tonumber(factionID), false), ",") 
-						exports.anticheat:setEld(theTeam, "rank_order", rankOrder, 'all')
-					end
-
-					local factionRanksTbl = {}
-					local factionRankID = {}
-					local rankOrder = split(rankOrder, ",")
-					for i,rankID in ipairs(rankOrder) do
-						local rankID = tonumber(rankID)
-						factionRanksTbl[rankID] = factionRanks[rankID]
-						factionRankID[factionRanks[rankID]] = rankID
-					end
+					local factionRanksTbl, factionRankID, rankOrder = buildFactionRankTables(theTeam, factionID, rankOrder, factionRanks)
 
 					local i = 1
 					for _, row in ipairs(result) do
@@ -319,8 +425,8 @@ function loadFaction(factionID)
 			--[[local memberLocation = {}]]
 			local memberPerks = {}
 			local rankOrder = getElementData(theTeam, "rank_order") or ""
-			local factionRanks = getElementData(theTeam, "ranks")
-			local factionWages = getElementData(theTeam, "wages")
+			local factionRanks = getElementData(theTeam, "ranks") or {}
+			local factionWages = getElementData(theTeam, "wages") or {}
 			local motd = getElementData(theTeam, "motd")
 			local note = getElementData(theTeam, "note")
 			local fnote = getElementData(theTeam, "fnote")
@@ -335,19 +441,7 @@ function loadFaction(factionID)
 
 			if (motd == "") then motd = nil end
 
-			if rankOrder == "" then
-				rankOrder = table.concat(getFactionRanks(tonumber(factionID), false), ",")
-				exports.anticheat:setEld(theTeam, "rank_order", rankOrder, 'all')
-			end
-
-			local factionRanksTbl = {}
-			local factionRankID = {}
-			local rankOrder = split(rankOrder, ",")
-			for i,rankID in ipairs(rankOrder) do
-				local rankID = tonumber(rankID)
-				factionRanksTbl[rankID] = factionRanks[rankID]
-				factionRankID[factionRanks[rankID]] = rankID
-			end
+			local factionRanksTbl, factionRankID, rankOrder = buildFactionRankTables(theTeam, factionID, rankOrder, factionRanks)
 
 			local i = 1
 			for _, row in ipairs(result) do
@@ -1194,27 +1288,34 @@ addCommandHandler('gotoduty',
 	false
 )
 
-function allocateFactionRank(query)
+function allocateFactionRank(query, factionID)
 	local factionRanks = {}
 	local factionWages = {}
 	if query then
-		local theTeam = nil
-        local pollResult = dbPoll(query, -1)
-        if not pollResult then
-            dbFree(query)
-            return
-        else
+		local pollResult = dbPoll(query, -1)
+		if not pollResult then
+			dbFree(query)
+			return
+		else
+			local fID = tonumber(factionID)
 			for i, row in pairs(pollResult) do
-				theTeam = getFactionFromID(tonumber(row['faction_id']))
+				fID = fID or tonumber(row['faction_id'])
 				local rankID = tonumber(row.id)
-				factionRanks[rankID] = row.name
-				factionWages[rankID] = row.wage
+				if rankID and row.name then
+					factionRanks[rankID] = row.name
+					factionWages[rankID] = tonumber(row.wage) or 0
+				end
 			end
-			exports.anticheat:setEld(theTeam, "ranks", factionRanks, 'all')
-			exports.anticheat:setEld(theTeam, "wages", factionWages, 'all')
-        end
+			if fID then
+				local theTeam = getFactionFromID(fID)
+				if isElement(theTeam) then
+					exports.anticheat:setEld(theTeam, "ranks", factionRanks, 'all')
+					exports.anticheat:setEld(theTeam, "wages", factionWages, 'all')
+				end
+			end
+		end
 	end
-    dbFree(query)
+	dbFree(query)
 end 
 
 addEvent("faction-system.showChangeRankGUI", true)
@@ -1222,18 +1323,20 @@ addEventHandler("faction-system.showChangeRankGUI", root, function(playerName, f
 	local factionID = tonumber(factionID)
 
 	local ranks = {}	-- Ranks Table
-	local def_table		-- Default Rank Table
-
 	local theTeam = getFactionFromID(factionID)
 	local rankOrder = getElementData(theTeam, "rank_order") or ""
 	rankOrder = split(rankOrder, ",")
 
 	for i,rankID in ipairs(rankOrder) do
 		local rankID = tonumber(rankID)
-		local rankName = getRankName(rankID)
-		table.insert(ranks, {rankID, rankName})
+		if rankID then
+			local rankName = getRankName(rankID)
+			if rankName then
+				table.insert(ranks, {rankID, rankName})
+			end
+		end
 	end
-	triggerClientEvent(client, "faction-system.showChangeRankGUI", resourceRoot, ranks, playerName, rankName)
+	triggerClientEvent(client, "faction-system.showChangeRankGUI", resourceRoot, ranks, playerName)
 end)
 
 addEvent("faction-system.saveNewRank", true)

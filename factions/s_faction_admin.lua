@@ -19,15 +19,39 @@ function adminSetPlayerFaction(thePlayer, commandName, partialNick, factionID)
 			local targetPlayer, targetPlayerNick = exports.global:findPlayerByPartialNick(thePlayer, partialNick)
 
 			if targetPlayer then
-				local defaultRank = getDefaultRank(factionID)
 				local theTeam = exports.pool:getElement("team", factionID)
 				if not theTeam then
-					outputChatBox("Invalid Faction ID.", thePlayer, 255, 0, 0)
+					outputChatBox("Invalid Faction ID (Faction #" .. factionID .. " is not loaded. Try /restart factions).", thePlayer, 255, 0, 0)
 					return
 				elseif isPlayerInFaction(targetPlayer, factionID) then
 					outputChatBox("Player is already a member of this faction.", thePlayer, 255, 0, 0)
 					return
 				end 
+
+				local defaultRank = getDefaultRank(factionID) or getLeaderRank(factionID)
+				if not defaultRank then
+					local rankOrder = split(getElementData(theTeam, "rank_order") or "", ",")
+					for _, rID in ipairs(rankOrder) do
+						local num = tonumber(rID)
+						if num then
+							defaultRank = num
+							break
+						end
+					end
+				end
+				if not defaultRank then
+					local factionRanks = getElementData(theTeam, "ranks")
+					if type(factionRanks) == "table" then
+						for rID, _ in pairs(factionRanks) do
+							defaultRank = tonumber(rID)
+							if defaultRank then break end
+						end
+					end
+				end
+				if not defaultRank then
+					outputChatBox("Faction #" .. factionID .. " has no valid ranks configured in database.", thePlayer, 255, 0, 0)
+					return
+				end
 
 				local factionInfo = getElementData(targetPlayer, "faction") or {}
 				local num_factions = exports.global:countTable(factionInfo)
@@ -54,6 +78,8 @@ function adminSetPlayerFaction(thePlayer, commandName, partialNick, factionID)
 					triggerEvent("onPlayerJoinFaction", targetPlayer, theTeam)
 					outputChatBox("You were set to Faction '" .. getTeamName(theTeam) .. "'.", targetPlayer, 255, 194, 14)
 					exports.logs:dbLog(thePlayer, 4, { targetPlayer, theTeam }, "SET TO FACTION")
+				else
+					outputChatBox("Failed to set faction member (database error).", thePlayer, 255, 0, 0)
 				end
 			end
 		end
@@ -123,13 +149,37 @@ function adminSetFactionLeader(thePlayer, commandName, partialNick, factionID)
 			local targetPlayer, targetPlayerNick = exports.global:findPlayerByPartialNick(thePlayer, partialNick)
 
 			if targetPlayer then
-				local theRank = getLeaderRank(factionID)
 				local theTeam = exports.pool:getElement("team", factionID)
 				if not theTeam then
-					outputChatBox("Invalid Faction ID.", thePlayer, 255, 0, 0)
+					outputChatBox("Invalid Faction ID (Faction #" .. factionID .. " is not loaded. Try /restart factions).", thePlayer, 255, 0, 0)
 					return
 				elseif isPlayerInFaction(targetPlayer, factionID) then
 					outputChatBox("Player is already a member of this faction, this command sets them to the faction with leader.", thePlayer, 255, 0, 0)
+					return
+				end
+
+				local theRank = getLeaderRank(factionID) or getDefaultRank(factionID)
+				if not theRank then
+					local rankOrder = split(getElementData(theTeam, "rank_order") or "", ",")
+					for _, rID in ipairs(rankOrder) do
+						local num = tonumber(rID)
+						if num then
+							theRank = num
+							break
+						end
+					end
+				end
+				if not theRank then
+					local factionRanks = getElementData(theTeam, "ranks")
+					if type(factionRanks) == "table" then
+						for rID, _ in pairs(factionRanks) do
+							theRank = tonumber(rID)
+							if theRank then break end
+						end
+					end
+				end
+				if not theRank then
+					outputChatBox("Faction #" .. factionID .. " has no valid ranks configured in database.", thePlayer, 255, 0, 0)
 					return
 				end
 
@@ -162,7 +212,7 @@ function adminSetFactionLeader(thePlayer, commandName, partialNick, factionID)
 					exports.logs:dbLog(thePlayer, 4, { targetPlayer, theTeam }, "SET INTO FACTION LEADER")
 					exports.factions:sendNotiToAllFactionMembers(factionID, targetPlayerNick .. " is now a leader of your faction '" .. getTeamName(theTeam) .. "'", "Set by "..exports.global:getPlayerFullIdentity(thePlayer))
 				else
-					outputChatBox("Invalid Faction ID.", thePlayer, 255, 0, 0)
+					outputChatBox("Failed to set faction leader (database error).", thePlayer, 255, 0, 0)
 				end
 			end
 		end

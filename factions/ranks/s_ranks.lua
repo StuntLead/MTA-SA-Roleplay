@@ -80,17 +80,20 @@ function addFactionRank(FactionID, rankName, permissions, plr)
 	local factionRanks = {}
 	factionRanks[rankID] = rankName
 	local theTeam = getFactionFromID(FactionID)
-	for i,v in pairs(getElementData(theTeam, "ranks")) do
-		factionRanks[i] = v
+	local currentRanks = getElementData(theTeam, "ranks")
+	if type(currentRanks) == "table" then
+		for i,v in pairs(currentRanks) do
+			factionRanks[i] = v
+		end
 	end	
 	
-	local rankOrder = getElementData(theTeam, "rank_order")
-	if rankOrder then
-		local newOrder = rankOrder..","..rankID
-		exports.anticheat:setEld(theTeam, "rank_order", newOrder, 'all') 
-		dbExec(exports.mysql:getConn("mta"), "UPDATE `factions` SET `rank_order` = '"..newOrder.."' WHERE `id` = "..FactionID)
+	local rankOrder = getElementData(theTeam, "rank_order") or ""
+	local newOrder = rankOrder ~= "" and (rankOrder .. "," .. rankID) or tostring(rankID)
+	if isElement(theTeam) then
+		exports.anticheat:setEld(theTeam, "rank_order", newOrder, 'all')
+		exports.anticheat:setEld(theTeam, "ranks", factionRanks, 'all')
 	end
-	exports.anticheat:setEld(theTeam, "ranks", factionRanks, 'all')
+	dbExec(exports.mysql:getConn("mta"), "UPDATE `factions` SET `rank_order` = ? WHERE `id` = ?", newOrder, FactionID)
 	triggerClientEvent("faction-system.cacheRanks", client, FactionRanks)
 	return true
 end
@@ -99,13 +102,14 @@ end
 ------------------->>
 
 function getFactionRanks(factionID, inOrder)
-	if (not factionID or type(factionID) ~= "number") then return false end
+	if (not factionID or type(factionID) ~= "number") then return {} end
 	if (not inOrder) then
 		return RanksByFaction[factionID] or {}
 	else
 		local ranks = {}	-- Ranks Table
 		local added = {}	-- Record of Added Ranks
 		local theTeam = getFactionFromID(factionID)
+		if not theTeam then return {} end
 
 		-- Start with Ranks in DB Storage
 		local rankOrder = getElementData(theTeam, "rank_order") or ""
@@ -113,7 +117,7 @@ function getFactionRanks(factionID, inOrder)
 			-- Add Ranks in Table
 		for i,rankID in ipairs(rankOrder) do
 			rankID = tonumber(rankID)
-			if (getRankFaction(rankID) == factionID) then
+			if rankID and (getRankFaction(rankID) == factionID) then
 				table.insert(ranks, rankID)
 				added[rankID] = true
 			end
@@ -123,7 +127,8 @@ function getFactionRanks(factionID, inOrder)
 end
 
 function getFactionRankIDByName(factionID, rankName)
-	local ranks = getFactionRanks(factionID)
+	if not rankName then return false end
+	local ranks = getFactionRanks(factionID) or {}
 	for i,rankID in ipairs(ranks) do
 		local rName = getFactionRankData(rankID, "name")
 		if (rName == rankName) then 
@@ -135,14 +140,14 @@ end
 
 function getDefaultRank(factionID)
 	if (not factionID or type(factionID) ~= "number") then return false end
-	local ranks = getFactionRanks(factionID)
+	local ranks = getFactionRanks(factionID) or {}
 	for i,rankID in ipairs(ranks) do
-		if FactionRanks[rankID]["isDefault"] == 1 then
-			local rankID = tonumber(rankID)
+		rankID = tonumber(rankID)
+		if rankID and FactionRanks[rankID] and tonumber(FactionRanks[rankID]["isDefault"]) == 1 then
 			return rankID
 		end	
 	end
-	return false
+	return tonumber(ranks[1]) or false
 end
 
 -- Rank Ordering
@@ -158,12 +163,14 @@ end
 
 function getLeaderRank(factionID)
 	if (not factionID or type(factionID) ~= "number") then return false end
-	for i,rankID in ipairs(getFactionRanks(factionID)) do
-		local rankID = tonumber(rankID)
-		if FactionRanks[rankID]["isLeader"] == 1 then
+	local ranks = getFactionRanks(factionID) or {}
+	for i,rankID in ipairs(ranks) do
+		rankID = tonumber(rankID)
+		if rankID and FactionRanks[rankID] and tonumber(FactionRanks[rankID]["isLeader"]) == 1 then
 			return rankID
 		end	
 	end
+	return tonumber(ranks[1]) or false
 end
 
 function getSeniorRank(factionID, rankID1, rankID2)
@@ -305,30 +312,45 @@ end)
 addEvent("faction-system.removeFactionRank", true)
 addEventHandler("faction-system.removeFactionRank", root, function(rankID, factionID)
 	-- Security check.
+	rankID = tonumber(rankID)
+	factionID = tonumber(factionID)
+	if not rankID or not factionID then return end
 	if not hasMemberPermissionTo(client, factionID, "modify_ranks") then
 		return false
 	end
 
-	local factionID = tonumber(factionID)
-	local rankName = getRankName(rankID)
-	dbExec(exports.mysql:getConn("mta"), "DELETE FROM `faction_ranks` WHERE id="..rankID) 
+	local rankName = getRankName(rankID) or "Unknown Rank"
+	dbExec(exports.mysql:getConn("mta"), "DELETE FROM `faction_ranks` WHERE `id`=?", rankID) 
 	dbQuery(resetPlayerRanks,{rankID, factionID},exports.mysql:getConn("mta"), "SELECT * FROM `characters_faction` WHERE `faction_rank` = ?", rankID)
 	outputChatBox("The '"..rankName.."' rank has been successfully deleted.", client, 255, 100, 100)
 	FactionRanks[rankID] = nil
+	if RanksByFaction[factionID] then
+		for idx, r in ipairs(RanksByFaction[factionID]) do
+			if r == rankID then
+				table.remove(RanksByFaction[factionID], idx)
+				break
+			end
+		end
+	end
 	local factionRankTable = {}
 	local newrank_order = ""
 	local theTeam = getFactionFromID(factionID)
-	local rankOrder = split(getElementData(theTeam, "rank_order"), ",")
+	local rankOrder = split(getElementData(theTeam, "rank_order") or "", ",")
 	for i,rID in pairs(rankOrder) do
-		local rID = tonumber(rID)
-		if rID ~= rankID then
-			factionRankTable[rID] = getRankName(rID)
-			newrank_order = newrank_order..rID..","
+		rID = tonumber(rID)
+		if rID and rID ~= rankID then
+			local rName = getRankName(rID)
+			if rName then
+				factionRankTable[rID] = rName
+				newrank_order = newrank_order..rID..","
+			end
 		end	
 	end	
-	dbExec(exports.mysql:getConn("mta"), "UPDATE `factions` SET `rank_order` = '"..newrank_order.."' WHERE `id` = "..factionID)
-	exports.anticheat:setEld(theTeam, "rank_order", newrank_order, 'all')
-	exports.anticheat:setEld(theTeam, "ranks", factionRankTable, 'all')
+	dbExec(exports.mysql:getConn("mta"), "UPDATE `factions` SET `rank_order` = ? WHERE `id` = ?", newrank_order, factionID)
+	if isElement(theTeam) then
+		exports.anticheat:setEld(theTeam, "rank_order", newrank_order, 'all')
+		exports.anticheat:setEld(theTeam, "ranks", factionRankTable, 'all')
+	end
 	getRankInfo(factionID, client)
 end)
 
